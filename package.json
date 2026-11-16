@@ -1,0 +1,36 @@
+{
+  "name": "tattoo-studio",
+  "private": true,
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/licenses.mjs && vite build && node scripts/finish-build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-transform-types --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.554.0",
+    "pixi.js": "^8.19.0",
+    "poly2tri": "^1.5.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "three": "^0.169.0",
+    "three-mesh-bvh": "^0.9.13",
+    "typescript-optional": "^3.0.0-alpha.3",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@types/three": "^0.181.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

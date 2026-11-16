@@ -1,0 +1,237 @@
+import { CanvasEventType } from '@/editor/interaction/CanvasEventType'
+import { InteractionContext } from '@/editor/interaction/InteractionContext'
+import { InteractionEvent } from '@/editor/interaction/InteractionEvent'
+import { InteractionHandler } from '@/editor/interaction/InteractionHandler'
+import { InteractionHandlerRouter } from '@/editor/interaction/InteractionHandlerRouter'
+import { DragInteractionHandler } from '@/editor/interaction/handlers/DragInteractionHandler'
+import { HoverInteractionHandler } from '@/editor/interaction/handlers/HoverInteractionHandler'
+import { MovePlacedMeshInteractionHandler } from '@/editor/interaction/handlers/MovePlacedMeshInteractionHandler'
+import { OrbitInteractionHandler } from '@/editor/interaction/handlers/OrbitInteractionHandler'
+import { PlacementGuardInteractionHandler } from '@/editor/interaction/handlers/PlacementGuardInteractionHandler'
+import { PlacementInteractionHandler } from '@/editor/interaction/handlers/PlacementInteractionHandler'
+import { ResizePlacedMeshInteractionHandler } from '@/editor/interaction/handlers/ResizePlacedMeshInteractionHandler'
+import { RotatePlacedMeshInteractionHandler } from '@/editor/interaction/handlers/RotatePlacedMeshInteractionHandler'
+import { SelectionInteractionHandler } from '@/editor/interaction/handlers/SelectionInteractionHandler'
+import { SlideVertexInteractionHandler } from '@/editor/interaction/handlers/SlideVertexInteractionHandler'
+import { Editor } from '@/editor/main/Editor'
+import { Container } from '@/lib/di/container'
+import { PerspectiveCamera, Raycaster, Vector2 } from 'three'
+
+export class CanvasEventHandler {
+	private static readonly DOUBLE_CLICK_SHIFT: number = 2
+
+	private static readonly SINGLE_CLICK_DELAY_MS: number = 200
+
+	private static readonly DOUBLE_CLICK_TIME_MS: number = 300
+
+	private lastPointerDownPosition: Vector2 | null = null
+
+	private lastPointerUpPosition: Vector2 | null = null
+
+	private lastPointerUpTime: number = 0
+
+	private singleClickTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+	private isPointerDown: boolean = false
+
+	private isDragging: boolean = false
+
+	private context: InteractionContext
+
+	private handlerRouter: InteractionHandlerRouter = new InteractionHandlerRouter([])
+
+	private raycaster: Raycaster | null = null
+
+	private mouse: Vector2 | null = null
+
+	private element: HTMLElement
+
+	private handlers: InteractionHandler[] = []
+
+	private camera: PerspectiveCamera
+
+	public constructor(
+		private readonly editor: Editor,
+		private readonly container: Container
+	) {
+		this.element = editor.renderer.domElement
+		this.camera = editor.camera
+		this.raycaster = new Raycaster()
+		this.mouse = new Vector2()
+		this.context = new InteractionContext(this.editor, this.container)
+		this.handlers = [
+			new PlacementGuardInteractionHandler(this.editor),
+			new SelectionInteractionHandler(this.editor),
+			new ResizePlacedMeshInteractionHandler(this.editor, this.container),
+			new RotatePlacedMeshInteractionHandler(this.editor, this.container),
+			new MovePlacedMeshInteractionHandler(this.editor, this.container),
+			new SlideVertexInteractionHandler(this.editor, this.container),
+			new DragInteractionHandler(this.editor),
+			new PlacementInteractionHandler(this.editor),
+			new HoverInteractionHandler(this.editor),
+			new OrbitInteractionHandler(this.editor),
+		]
+		this.handlerRouter = new InteractionHandlerRouter(this.handlers)
+
+		this.context.initialize(this.raycaster, this.camera, this.element, this.mouse)
+
+		this.element.addEventListener('pointerdown', this.down)
+		this.element.addEventListener('pointermove', this.move)
+		this.element.addEventListener('pointerup', this.up)
+        this.element.addEventListener('pointercancel', this.up)
+	}
+
+    private down = (e: PointerEvent) => { this.element.setPointerCapture(e.pointerId); void this.onPointerDown(e) }
+    private move = (e: PointerEvent) => { void this.onPointerMove(e) }
+    private up = (e: PointerEvent) => { void this.onPointerUp(e) }
+    public destroy() {
+        if (this.singleClickTimeoutId) clearTimeout(this.singleClickTimeoutId)
+        this.element.removeEventListener('pointerdown', this.down)
+        this.element.removeEventListener('pointermove', this.move)
+        this.element.removeEventListener('pointerup', this.up)
+        this.element.removeEventListener('pointercancel', this.up)
+    }
+
+	public async onPointerDown(event: PointerEvent): Promise<void> {
+		event.preventDefault()
+		event.stopPropagation()
+
+		this.lastPointerDownPosition = new Vector2(event.clientX, event.clientY)
+		this.isPointerDown = true
+		this.isDragging = false
+
+		this.context.updatePressedButtons(event)
+
+		// Clear single click timeout, if new click is started
+		if (this.singleClickTimeoutId) {
+			clearTimeout(this.singleClickTimeoutId)
+			this.singleClickTimeoutId = null
+		}
+	}
+
+	public async onPointerMove(event: PointerEvent): Promise<void> {
+		event.preventDefault()
+		event.stopPropagation()
+
+		if (!this.isDragging && this.isPointerDown && this.isMoved(event.clientX, event.clientY)) {
+			this.isDragging = true
+			await this.dispatchEvent(CanvasEventType.MoveStart, event.clientX, event.clientY, 0, 0, event)
+		}
+		if (this.isDragging) {
+			await this.dispatchEvent(CanvasEventType.Move, event.clientX, event.clientY, 0, 0, event)
+		} else if (!this.isPointerDown) {
+			await this.dispatchEvent(CanvasEventType.Hover, event.clientX, event.clientY, 0, 0, event)
+		}
+	}
+
+	public async onPointerUp(event: PointerEvent): Promise<void> {
+		event.preventDefault()
+		event.stopPropagation()
+
+		this.isPointerDown = false
+
+		if (this.isDragging) {
+			await this.dispatchEvent(CanvasEventType.MoveEnd, event.clientX, event.clientY, 0, 0, event)
+			this.isDragging = false
+			this.lastPointerUpPosition = null
+			this.lastPointerUpTime = 0
+			return
+		}
+
+		if (this.isMoved(event.clientX, event.clientY)) {
+			this.lastPointerUpPosition = null
+			this.lastPointerUpTime = 0
+			return
+		}
+
+		const currentTime = Date.now()
+		const currentPosition = new Vector2(event.clientX, event.clientY)
+
+		const isDoubleClick =
+			this.lastPointerUpPosition !== null &&
+			this.lastPointerUpTime > 0 &&
+			currentTime - this.lastPointerUpTime < CanvasEventHandler.DOUBLE_CLICK_TIME_MS &&
+			!this.isMoved(event.clientX, event.clientY, this.lastPointerUpPosition)
+
+		if (isDoubleClick) {
+			if (this.singleClickTimeoutId) {
+				clearTimeout(this.singleClickTimeoutId)
+				this.singleClickTimeoutId = null
+			}
+			this.lastPointerUpPosition = null
+			this.lastPointerUpTime = 0
+			void this.dispatchEvent(CanvasEventType.DoubleClick, event.clientX, event.clientY, 0, 0, event)
+			return
+		}
+
+		this.lastPointerUpPosition = currentPosition
+		this.lastPointerUpTime = currentTime
+
+		if (this.singleClickTimeoutId) {
+			clearTimeout(this.singleClickTimeoutId)
+		}
+		this.singleClickTimeoutId = setTimeout(() => {
+			this.singleClickTimeoutId = null
+			this.lastPointerUpPosition = null
+			this.lastPointerUpTime = 0
+			void this.dispatchEvent(CanvasEventType.Click, event.clientX, event.clientY, 0, 0, event)
+		}, CanvasEventHandler.SINGLE_CLICK_DELAY_MS)
+	}
+
+	private isMoved(x: number, y: number, referencePosition?: Vector2): boolean {
+		const position = referencePosition ?? this.lastPointerDownPosition
+		if (!position) {
+			return false
+		}
+		const dx: number = x - position.x
+		const dy: number = y - position.y
+		return Math.hypot(dx, dy) > CanvasEventHandler.DOUBLE_CLICK_SHIFT
+	}
+
+	private async dispatchEvent(
+		type: CanvasEventType,
+		x: number,
+		y: number,
+		dx: number,
+		dy: number,
+		event: MouseEvent
+	): Promise<void> {
+		if (!this.context || !this.camera || !this.raycaster || !this.mouse) {
+			return
+		}
+
+		this.context.initialize(this.raycaster, this.camera, this.element, this.mouse)
+
+		this.context.findIntersections(x, y)
+
+		const newEvent: InteractionEvent = {
+			type,
+			x,
+			y,
+			dx,
+			dy,
+			modifiers: {
+				shift: event.shiftKey,
+				ctrl: event.ctrlKey,
+				meta: event.metaKey,
+				alt: event.altKey,
+			},
+			context: this.context,
+			raw: event,
+		}
+
+		await this.handlerRouter.dispatch(newEvent)
+	}
+
+	public clear(): void {
+		this.context.clear()
+	}
+
+	public enableHandler(handlerId: string): void {
+		this.handlerRouter.enableHandler(handlerId)
+	}
+
+	public disableHandler(handlerId: string): void {
+		this.handlerRouter.disableHandler(handlerId)
+	}
+}

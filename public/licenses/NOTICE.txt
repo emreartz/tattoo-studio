@@ -1,0 +1,27 @@
+Tattoo Studio - independently maintained software
+
+This product incorporates MIT-licensed editor code by Mfecane.
+Copyright (c) 2026 Mfecane. The full notice is in MIT.txt.
+
+Arm model and skin textures: supplied with the original MIT-licensed source.
+The original README states: “All 3D modeling and all default tattoo images
+in this project were created by me as a modeller and tattoo artist.”
+No separate restrictive asset license was found in the supplied repository.
+This attribution records the available provenance; no independent asset-origin
+verification was supplied. Default tattoo artwork is not distributed here.
+
+The environment is generated using Three.js RoomEnvironment (MIT).
+The previous bundled environment map, whose provenance was unspecified,
+is not distributed here.
+
+Draco decoder (unmodified files distributed with Three.js): Google Draco,
+Apache-2.0. See DRACO-LICENSE.txt. Source: https://github.com/google/draco
+
+@pixi/colord: MIT, Vlad Shilov. See COLORD-LICENSE.txt; the npm package
+omits its upstream license file. Source: https://github.com/omgovich/colord
+
+JavaScript dependency license texts are collected in DEPENDENCIES.txt.
+Your imported images remain yours and are stored only in your browser/project files.
+
+Classic theme: Syne, SIL Open Font License 1.1. See ../fonts/Syne-OFL.txt.
+Source: https://gitlab.com/bonjour-monde/fonderie/syne-typeface
